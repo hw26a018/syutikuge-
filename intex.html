@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Office Guardian: Corporate Crisis</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0f172a;
+            font-family: 'Hiragino Kaku Gothic Pro', 'Meiryo', sans-serif;
+            touch-action: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            cursor: crosshair;
+        }
+        #game-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            max-width: 500px;
+            aspect-ratio: 9 / 16;
+            background: #000;
+            overflow: hidden;
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+            border: 4px solid #334155;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        /* UI Overlay Elements */
+        .ui-overlay {
+            position: absolute;
+            top: 15px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+            z-index: 10;
+        }
+        .player-status {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(15, 23, 42, 0.7);
+            padding: 6px 10px;
+            border-radius: 2px;
+            border-left: 4px solid #ccc;
+            backdrop-filter: blur(4px);
+        }
+        .hp-bar-container {
+            width: 60%;
+            height: 8px;
+            background: rgba(30, 41, 59, 0.8);
+            border-radius: 1px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .hp-bar {
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+        #p1-hp { background: #38bdf8; }
+        #p2-hp { background: #fb7185; }
+        
+        /* 持続ダメージ時の点滅アニメーション */
+        @keyframes hp-danger {
+            0% { filter: brightness(1); }
+            50% { filter: brightness(1.5) saturate(1.5); }
+            100% { filter: brightness(1); }
+        }
+        .hp-burn {
+            animation: hp-danger 0.2s infinite;
+            background: #ef4444 !important;
+        }
+        
+        #timer-display {
+            position: absolute;
+            top: 90px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1.2rem;
+            background: rgba(0,0,0,0.6);
+            padding: 2px 15px;
+            border: 1px solid #475569;
+            z-index: 15;
+            pointer-events: none;
+        }
+
+        /* Business Menus */
+        .business-panel {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #f8fafc;
+            width: 90%;
+            padding: 2rem;
+            border-radius: 4px;
+            text-align: center;
+            color: #1e293b;
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+            z-index: 100;
+            border-top: 8px solid #334155;
+        }
+
+        .hidden { display: none; }
+        
+        .btn-work {
+            background: #334155;
+            color: white;
+            padding: 14px 30px;
+            border-radius: 2px;
+            cursor: pointer;
+            margin-top: 1.5rem;
+            border: none;
+            font-weight: bold;
+            letter-spacing: 1px;
+            width: 100%;
+            transition: background 0.2s;
+        }
+        .btn-work:hover { background: #1e293b; }
+
+        #score-panel {
+            position: absolute;
+            top: 130px;
+            width: 100%;
+            display: flex;
+            justify-content: space-around;
+            pointer-events: none;
+            z-index: 5;
+        }
+        .score-box { 
+            text-align: center; 
+            width: 40%; 
+            background: rgba(255,255,255,0.1);
+            padding: 5px;
+            border-radius: 2px;
+        }
+        .p1-text { color: #38bdf8; }
+        .p2-text { color: #fb7185; }
+        
+        /* Combo popups */
+        .combo-display {
+            position: absolute;
+            text-align: center;
+            pointer-events: none;
+            z-index: 5;
+            opacity: 0;
+        }
+        #p1-combo-container { top: 180px; left: 20%; }
+        #p2-combo-container { top: 180px; right: 20%; }
+        .combo-count { font-size: 2rem; font-weight: 900; line-height: 1; }
+        .combo-label { font-size: 0.6rem; font-weight: bold; }
+
+        /* Animations */
+        @keyframes pop {
+            0% { transform: scale(0.8); opacity: 0; }
+            20% { transform: scale(1.1); opacity: 1; }
+            80% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(0.9); opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="timer-display">TIME: 02:30</div>
+
+        <div id="p1-combo-container" class="combo-display">
+            <div id="p1-combo-count" class="combo-count p1-text">0</div>
+            <div class="combo-label p1-text">EFFICIENCY</div>
+        </div>
+        <div id="p2-combo-container" class="combo-display">
+            <div id="p2-combo-count" class="combo-count p2-text">0</div>
+            <div class="combo-label p2-text">EFFICIENCY</div>
+        </div>
+
+        <div class="ui-overlay">
+            <div class="player-status" style="border-left-color: #38bdf8;">
+                <div class="flex flex-col">
+                    <span class="text-[10px] p1-text font-bold">担当：山田（P1）</span>
+                    <div id="p1-buff" class="hidden text-[10px] text-blue-400 font-bold">残業モード</div>
+                    <div id="p1-status-dot" class="hidden text-[9px] text-red-500 font-bold animate-pulse">二日酔い注意！</div>
+                </div>
+                <div class="hp-bar-container">
+                    <div id="p1-hp" class="hp-bar" style="width: 100%"></div>
+                </div>
+            </div>
+            <div class="player-status" style="border-left-color: #fb7185;">
+                <div class="flex flex-col">
+                    <span class="text-[10px] p2-text font-bold">担当：佐藤（P2）</span>
+                    <div id="p2-buff" class="hidden text-[10px] text-yellow-500 font-bold">残業モード</div>
+                    <div id="p2-status-dot" class="hidden text-[9px] text-red-500 font-bold animate-pulse">二日酔い注意！</div>
+                </div>
+                <div class="hp-bar-container">
+                    <div id="p2-hp" class="hp-bar" style="width: 100%"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="score-panel">
+            <div class="score-box">
+                <div class="text-[9px] text-white/60">個人売上 (P1)</div>
+                <div id="p1-score-val" class="text-xl p1-text font-mono">0</div>
+            </div>
+            <div class="score-box">
+                <div class="text-[9px] text-white/60">個人売上 (P2)</div>
+                <div id="p2-score-val" class="text-xl p2-text font-mono">0</div>
+            </div>
+        </div>
+
+        <!-- Title Menu -->
+        <div id="menu" class="business-panel">
+            <div class="mb-2 text-[10px] text-slate-400 tracking-widest uppercase">Secret Weapon Project</div>
+            <h1 class="text-2xl font-black mb-1 text-slate-800">株式会社オフィス・ガーディアン</h1>
+            <div class="w-16 h-1 bg-slate-800 mx-auto mb-6"></div>
+            
+            <div class="text-left text-xs text-slate-600 mb-6 bg-slate-100 p-4 border border-slate-200">
+                <p class="font-bold mb-1">【本日の業務目標】</p>
+                <ul class="list-disc ml-4 space-y-1">
+                    <li>飛来する理不尽な叱責（敵）の排除</li>
+                    <li>報告書（自機弾）と書類の山（敵弾）の管理</li>
+                    <li><strong>注意：ボスのビール攻撃は持続的な精神ダメージ（二日酔い）を伴う</strong></li>
+                </ul>
+            </div>
+            
+            <p class="text-[10px] text-slate-400 mb-4">※P1: マウス操作 / P2: 矢印キー操作</p>
+            <button class="btn-work" onclick="startGame()">業務開始（ログイン）</button>
+        </div>
+
+        <!-- Results Screen -->
+        <div id="game-over" class="business-panel hidden">
+            <h2 class="text-xl font-bold mb-1 text-slate-800">業務完了報告書</h2>
+            <div id="result-timestamp" class="text-[9px] text-slate-400 mb-4">202X年XX月XX日 実施</div>
+            
+            <div class="w-full border-t border-b border-slate-200 py-4 mb-6">
+                <div id="winner-text" class="text-lg font-bold text-center mb-4 text-slate-700"></div>
+                
+                <div class="flex justify-between items-start">
+                    <div class="w-1/2 px-2 border-r border-slate-100">
+                        <div class="p1-text font-bold text-xs mb-1">山田（P1）実績</div>
+                        <div class="text-2xl font-mono" id="final-p1-score">0</div>
+                        <div class="text-[9px] text-slate-500">最高生産性: <span id="final-p1-maxcombo">0</span></div>
+                    </div>
+                    <div class="w-1/2 px-2">
+                        <div class="p2-text font-bold text-xs mb-1">佐藤（P2）実績</div>
+                        <div class="text-2xl font-mono" id="final-p2-score">0</div>
+                        <div class="text-[9px] text-slate-500">最高生産性: <span id="final-p2-maxcombo">0</span></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="text-left text-[10px] text-slate-500 mb-6 italic">
+                備考：お疲れ様でした。引き続き、社内の治安維持に努めてください。
+            </div>
+            
+            <button class="btn-work" onclick="restartGame()">再出勤する</button>
+        </div>
+
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('game-container');
+        const timerDisplay = document.getElementById('timer-display');
+        
+        // --- Assets ---
+        function createSafeImage(src) {
+            const img = new Image();
+            img.src = src;
+            img.crossOrigin = "anonymous";
+            return img;
+        }
+
+        const bgImg = createSafeImage('https://raw.githubusercontent.com/hw26a018/material/main/medium_office_1.jpg');
+        const repairImg = createSafeImage('https://raw.githubusercontent.com/hw26a018/mater/main/food_konbini_onigiri.png');
+        const bossImg = createSafeImage('https://raw.githubusercontent.com/hw26a018/mater/main/kaisya_ayatsuru_joushi.png');
+        const enemyBulletImg = createSafeImage('https://raw.githubusercontent.com/hw26a018/mater/main/syorui_yamadumi.png');
+        const beerImg = createSafeImage('https://raw.githubusercontent.com/hw26a018/mate/main/beer.png');
+        const playerBulletImg = createSafeImage('https://raw.githubusercontent.com/hw26a018/mater/main/document_houkokusyo.png');
+        const enemyImg = createSafeImage('https://raw.githubusercontent.com/hw26a018/mate/main/joushi_buka_men1_shikaru.png');
+        
+        // P1 Assets
+        const p1Img = createSafeImage('https://raw.githubusercontent.com/hw26a018/material/main/kaisya_man_bad.png');
+        const p1DrunkImg = createSafeImage('https://raw.githubusercontent.com/hw26a018/mate/main/yopparai_businessman.png');
+        
+        // P2 Assets
+        const p2Img = createSafeImage('https://raw.githubusercontent.com/hw26a018/material/main/kaisya_woman_bad.png');
+        const p2DrunkImg = createSafeImage('https://raw.githubusercontent.com/hw26a018/mate/main/yopparai_businesswoman.png');
+
+        function isImageLoaded(img) {
+            return img && img.complete && img.naturalWidth !== 0;
+        }
+
+        // Game State
+        let gameActive = false;
+        let scoreP1 = 0, scoreP2 = 0;
+        let comboP1 = 0, comboP2 = 0;
+        let maxComboP1 = 0, maxComboP2 = 0;
+        let gameTime = 0;
+        let timeLeft = 150; 
+        const keys = {};
+        const mouse = { x: 0, y: 0 };
+        let bgOffset = 0;
+
+        const config = {
+            playerSize: 45,
+            playerSpeed: 6,
+            bulletSpeed: 14,
+            enemyBulletSpeed: 5.5,
+            enemySize: 60,
+            enemySpeed: 1.8,
+            maxHP: 100,
+            baseShootCooldown: 400,
+            enemyShootRate: 0.005,  
+            spawnRate: 45,
+            itemDropChance: 0.15, 
+            bossSpawnTime: 4200,    
+            dotDuration: 180, 
+            dotDamagePerFrame: 0.08 
+        };
+
+        class Player {
+            constructor(x, y, color, id, img, altImg) {
+                this.x = x; this.y = y; this.color = color; this.id = id; 
+                this.img = img;
+                this.altImg = altImg; // 二日酔い用画像
+                this.hp = config.maxHP;
+                this.width = config.playerSize; this.height = config.playerSize;
+                this.lastShot = 0; this.angle = -Math.PI / 2;
+                this.powerUpTimer = 0; this.invincibleTimer = 0;
+                this.dotTimer = 0; 
+            }
+            draw() {
+                if (this.hp <= 0) return;
+                ctx.save();
+                ctx.translate(this.x + this.width/2, this.y + this.height/2);
+                
+                // 二日酔いエフェクト（背景）
+                if (this.dotTimer > 0) {
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.width * 0.8, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(239, 68, 68, ${0.2 + Math.sin(gameTime * 0.2) * 0.1})`;
+                    ctx.fill();
+                }
+
+                // 無敵エフェクト
+                if (this.invincibleTimer > 0) {
+                    ctx.beginPath(); ctx.arc(0, 0, this.width * 0.7, 0, Math.PI*2);
+                    ctx.strokeStyle = this.color; ctx.setLineDash([5, 5]); ctx.lineWidth = 2; ctx.stroke();
+                }
+                
+                ctx.rotate(this.angle + Math.PI/2);
+                
+                // 二日酔い中かつ代替画像がある場合に切り替え
+                let currentImg = (this.dotTimer > 0 && this.altImg) ? this.altImg : this.img;
+
+                if (isImageLoaded(currentImg)) {
+                    ctx.drawImage(currentImg, -this.width/2, -this.height/2, this.width, this.height);
+                } else {
+                    ctx.fillStyle = this.color; ctx.fillRect(-15, -15, 30, 30);
+                }
+                ctx.restore();
+            }
+            update() {
+                if (this.hp <= 0) return;
+                let dx = 0, dy = 0;
+                if (this.powerUpTimer > 0) this.powerUpTimer--;
+                if (this.invincibleTimer > 0) this.invincibleTimer--;
+                
+                // 持続ダメージ処理
+                if (this.dotTimer > 0) {
+                    this.dotTimer--;
+                    this.hp -= config.dotDamagePerFrame;
+                    document.getElementById(`p${this.id}-status-dot`).classList.remove('hidden');
+                    document.getElementById(`p${this.id}-hp`).classList.add('hp-burn');
+                } else {
+                    document.getElementById(`p${this.id}-status-dot`).classList.add('hidden');
+                    document.getElementById(`p${this.id}-hp`).classList.remove('hp-burn');
+                }
+
+                document.getElementById(`p${this.id}-buff`).classList.toggle('hidden', this.powerUpTimer <= 0);
+                
+                // 操作処理
+                if (this.id === 1) {
+                    dx = (mouse.x - this.width/2 - this.x) * 0.15; dy = (mouse.y - this.height/2 - this.y) * 0.15;
+                    this.angle = Math.atan2(dy, dx);
+                } else {
+                    if (keys['ArrowUp']) dy -= config.playerSpeed;
+                    if (keys['ArrowDown']) dy += config.playerSpeed;
+                    if (keys['ArrowLeft']) dx -= config.playerSpeed;
+                    if (keys['ArrowRight']) dx += config.playerSpeed;
+                    if (dx !== 0 || dy !== 0) this.angle = Math.atan2(dy, dx);
+                }
+                this.x = Math.max(0, Math.min(canvas.width - this.width, this.x + dx));
+                this.y = Math.max(0, Math.min(canvas.height - this.height, this.y + dy));
+                this.shoot();
+            }
+            shoot() {
+                const now = Date.now();
+                const cd = this.powerUpTimer > 0 ? config.baseShootCooldown / 2.5 : config.baseShootCooldown;
+                if (now - this.lastShot > cd) {
+                    bullets.push(new Bullet(this.x + this.width/2, this.y, -Math.PI / 2, this.color, false, this.id));
+                    this.lastShot = now;
+                }
+            }
+        }
+
+        class Enemy {
+            constructor() {
+                this.x = Math.random() * (canvas.width - 60) + 30; 
+                this.y = -60;
+                this.hp = 20; 
+                this.width = config.enemySize;
+                this.height = config.enemySize;
+                this.speed = config.enemySpeed + (gameTime / 15000);
+            }
+            update() {
+                const target = (p1.hp > 0 && (p2.hp <= 0 || Math.hypot(p1.x-this.x, p1.y-this.y) < Math.hypot(p2.x-this.x, p2.y-this.y))) ? p1 : p2;
+                if (target.hp > 0) {
+                    const angle = Math.atan2(target.y - this.y, target.x - this.x);
+                    this.x += Math.cos(angle) * this.speed; this.y += Math.sin(angle) * this.speed;
+                    if (Math.random() < config.enemyShootRate + (gameTime / 3000000)) bullets.push(new Bullet(this.x, this.y, angle, '#ff00ff', true, 0));
+                }
+            }
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                if (isImageLoaded(enemyImg)) {
+                    ctx.drawImage(enemyImg, -this.width/2, -this.height/2, this.width, this.height);
+                } else {
+                    ctx.fillStyle = "#ff4444"; ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI*2); ctx.fill();
+                }
+                ctx.restore();
+            }
+        }
+
+        class Boss {
+            constructor() {
+                this.x = canvas.width / 2; this.y = -200;
+                this.hp = 2000; this.maxHp = this.hp;
+                this.active = false; this.targetY = 120;
+                this.shootCooldown = 0; this.width = 160; this.height = 200;
+            }
+            update() {
+                if (this.y < this.targetY) this.y += 1;
+                else this.active = true;
+                if (this.active) {
+                    this.y = this.targetY + Math.sin(gameTime * 0.05) * 10;
+                    this.x = canvas.width / 2 + Math.cos(gameTime * 0.02) * 40;
+                    this.shootCooldown--;
+                    if (this.shootCooldown <= 0) {
+                        for (let i = -2; i <= 2; i++) {
+                            const b = new Bullet(this.x, this.y + 40, Math.PI/2 + i * 0.35, '#f00', true, 0);
+                            b.isDot = true; 
+                            bullets.push(b);
+                        }
+                        this.shootCooldown = 70; 
+                    }
+                }
+            }
+            draw() {
+                ctx.save(); ctx.translate(this.x, this.y);
+                if (isImageLoaded(bossImg)) {
+                    ctx.drawImage(bossImg, -this.width/2, -this.height/2, this.width, this.height);
+                } else {
+                    ctx.fillStyle = '#1e293b'; ctx.fillRect(-this.width/2, -this.height/2, this.width, this.height);
+                }
+                ctx.fillStyle = '#334155'; ctx.fillRect(-60, -this.height/2 - 15, 120, 6);
+                ctx.fillStyle = '#ef4444'; ctx.fillRect(-60, -this.height/2 - 15, 120 * (this.hp / this.maxHp), 6);
+                ctx.restore();
+            }
+        }
+
+        class Bullet {
+            constructor(x, y, angle, color, isEnemy, ownerId) {
+                this.x = x; this.y = y;
+                const speed = isEnemy ? config.enemyBulletSpeed : config.bulletSpeed;
+                this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed;
+                this.color = color; this.isEnemy = isEnemy; this.ownerId = ownerId;
+                this.rotation = isEnemy ? Math.random() * Math.PI * 2 : 0;
+                this.rotationSpeed = isEnemy ? (Math.random() - 0.5) * 0.2 : 0;
+                this.isDot = false; 
+            }
+            update() { 
+                this.x += this.vx; 
+                this.y += this.vy; 
+                if(this.isEnemy) this.rotation += this.rotationSpeed; 
+            }
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                if (this.isEnemy) {
+                    ctx.rotate(this.rotation);
+                    if (this.isDot && isImageLoaded(beerImg)) {
+                        ctx.shadowBlur = 10;
+                        ctx.shadowColor = "rgba(255, 200, 0, 0.8)";
+                        ctx.drawImage(beerImg, -20, -25, 40, 50);
+                    } else if (isImageLoaded(enemyBulletImg)) {
+                        ctx.drawImage(enemyBulletImg, -18, -18, 36, 36);
+                    } else {
+                        ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI*2); ctx.fill();
+                    }
+                } else if (!this.isEnemy && isImageLoaded(playerBulletImg)) {
+                    ctx.drawImage(playerBulletImg, -15, -20, 30, 40);
+                } else {
+                    ctx.fillStyle = this.color; 
+                    ctx.beginPath(); 
+                    ctx.arc(0, 0, 4, 0, Math.PI*2); 
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+        }
+
+        class Item {
+            constructor(x, y) {
+                this.x = x; this.y = y;
+                this.type = 'heal'; 
+                this.size = 28;
+            }
+            update() { this.y += 1; }
+            draw() {
+                const img = repairImg; 
+                if (isImageLoaded(img)) {
+                    ctx.drawImage(img, this.x - this.size/2, this.y - this.size/2, this.size, this.size);
+                } else {
+                    ctx.fillStyle = '#22c55e';
+                    ctx.fillRect(this.x - 10, this.y - 10, 20, 20);
+                }
+            }
+        }
+
+        let p1, p2, bullets, enemies, items, timerInterval, boss;
+
+        function init() {
+            canvas.width = container.clientWidth; canvas.height = container.clientHeight;
+            // プレイヤー初期化
+            p1 = new Player(canvas.width * 0.3, canvas.height * 0.85, '#38bdf8', 1, p1Img, p1DrunkImg);
+            p2 = new Player(canvas.width * 0.6, canvas.height * 0.85, '#fb7185', 2, p2Img, p2DrunkImg);
+            
+            bullets = []; enemies = []; items = []; boss = null;
+            scoreP1 = 0; scoreP2 = 0; comboP1 = 0; comboP2 = 0; maxComboP1 = 0; maxComboP2 = 0;
+            gameTime = 0; timeLeft = 150; bgOffset = 0;
+            updateUI();
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => { if (gameActive) { timeLeft--; updateTimerUI(); if (timeLeft <= 0) showGameOver("TIME EXPIRED"); } }, 1000);
+        }
+
+        function updateUI() {
+            const p1HpPercent = Math.max(0, (p1.hp / config.maxHP) * 100);
+            const p2HpPercent = Math.max(0, (p2.hp / config.maxHP) * 100);
+            document.getElementById('p1-hp').style.width = `${p1HpPercent}%`;
+            document.getElementById('p2-hp').style.width = `${p2HpPercent}%`;
+            document.getElementById('p1-score-val').innerText = scoreP1.toLocaleString();
+            document.getElementById('p2-score-val').innerText = scoreP2.toLocaleString();
+        }
+
+        function updateTimerUI() {
+            const m = Math.floor(timeLeft / 60), s = timeLeft % 60;
+            timerDisplay.innerText = `TIME: ${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        function updateComboUI(id, val) {
+            const el = document.getElementById(`p${id}-combo-container`);
+            const count = document.getElementById(`p${id}-combo-count`);
+            if (val > 1) {
+                count.innerText = val; el.style.opacity = "1";
+                el.style.animation = 'none'; void el.offsetWidth; el.style.animation = 'pop 0.6s forwards';
+            } else el.style.opacity = "0";
+        }
+
+        function checkCollisions() {
+            for(let i=bullets.length-1; i>=0; i--) {
+                const b = bullets[i];
+                if(b.y < -50 || b.y > canvas.height + 50 || b.x < -50 || b.x > canvas.width + 50) { 
+                    bullets.splice(i, 1); continue; 
+                }
+                if (!b.isEnemy) {
+                    enemies.forEach((u, ui) => {
+                        if(Math.hypot(b.x - u.x, b.y - u.y) < 30) {
+                            u.hp -= 10; bullets.splice(i, 1);
+                            if(u.hp <= 0) {
+                                enemies.splice(ui, 1);
+                                if(b.ownerId === 1) { comboP1++; maxComboP1 = Math.max(maxComboP1, comboP1); scoreP1 += 100; updateComboUI(1, comboP1); }
+                                else { comboP2++; maxComboP2 = Math.max(maxComboP2, comboP2); scoreP2 += 100; updateComboUI(2, comboP2); }
+                                if(Math.random() < config.itemDropChance) items.push(new Item(u.x, u.y));
+                                updateUI();
+                            }
+                        }
+                    });
+                    if (boss && Math.abs(b.x - boss.x) < 70 && Math.abs(b.y - boss.y) < 80) {
+                        boss.hp -= 5; bullets.splice(i, 1);
+                        if (boss.hp <= 0) { scoreP1 += 5000; boss = null; updateUI(); }
+                    }
+                } else {
+                    [p1, p2].forEach(p => {
+                        if(p.hp > 0 && p.invincibleTimer <= 0 && Math.hypot(b.x - (p.x+p.width/2), b.y - (p.y+p.height/2)) < 22) {
+                            p.hp -= 10; 
+                            if (b.isDot) p.dotTimer = config.dotDuration;
+                            bullets.splice(i, 1); 
+                            updateUI();
+                            if (p.id === 1) { comboP1 = 0; updateComboUI(1, 0); } else { comboP2 = 0; updateComboUI(2, 0); }
+                        }
+                    });
+                }
+            }
+            items.forEach((it, ii) => {
+                [p1, p2].forEach(p => {
+                    if (p.hp > 0 && Math.hypot(it.x - (p.x+p.width/2), it.y - (p.y+p.height/2)) < 30) {
+                        if (it.type === 'heal') {
+                            p.hp = Math.min(config.maxHP, p.hp + 20);
+                            p.dotTimer = 0; 
+                        }
+                        items.splice(ii, 1); updateUI();
+                    }
+                });
+            });
+            if(p1.hp <= 0 && p2.hp <= 0) showGameOver("PROJECT FAILURE");
+        }
+
+        function showGameOver(title) {
+            gameActive = false;
+            document.getElementById('winner-text').innerText = scoreP1 > scoreP2 ? "山田（P1）が売上トップ" : "佐藤（P2）が売上トップ";
+            document.getElementById('final-p1-score').innerText = scoreP1.toLocaleString();
+            document.getElementById('final-p2-score').innerText = scoreP2.toLocaleString();
+            document.getElementById('final-p1-maxcombo').innerText = maxComboP1;
+            document.getElementById('final-p2-maxcombo').innerText = maxComboP2;
+            document.getElementById('result-timestamp').innerText = new Date().toLocaleString() + " 実施";
+            document.getElementById('game-over').classList.remove('hidden');
+        }
+
+        function gameLoop() {
+            if(!gameActive) return;
+            gameTime++;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (isImageLoaded(bgImg)) {
+                bgOffset = (bgOffset + 0.5) % canvas.height;
+                ctx.drawImage(bgImg, 0, bgOffset - canvas.height, canvas.width, canvas.height);
+                ctx.drawImage(bgImg, 0, bgOffset, canvas.width, canvas.height);
+            } else {
+                ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            if(gameTime % config.spawnRate === 0) {
+                enemies.push(new Enemy());
+                if (gameTime > 1000 && Math.random() < 0.4) enemies.push(new Enemy()); 
+                if (boss && Math.random() < 0.2) enemies.push(new Enemy());
+            }
+            
+            if(gameTime === config.bossSpawnTime) boss = new Boss();
+
+            p1.update(); p2.update();
+            bullets.forEach(b => b.update());
+            enemies.forEach(u => u.update());
+            items.forEach(it => it.update());
+            if (boss) boss.update();
+            checkCollisions();
+
+            bullets.forEach(b => b.draw());
+            enemies.forEach(u => u.update());
+            enemies.forEach(u => u.draw());
+            items.forEach(it => it.draw());
+            if (boss) boss.draw();
+            p1.draw(); p2.draw();
+            
+            updateUI();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function startGame() { 
+            document.getElementById('menu').classList.add('hidden'); 
+            document.getElementById('game-over').classList.add('hidden'); 
+            init(); 
+            gameActive = true; 
+            gameLoop(); 
+        }
+        function restartGame() { startGame(); }
+
+        container.addEventListener('mousemove', e => {
+            const rect = canvas.getBoundingClientRect();
+            mouse.x = (e.clientX - rect.left) * (canvas.width / rect.width);
+            mouse.y = (e.clientY - rect.top) * (canvas.height / rect.height);
+        });
+        window.addEventListener('keydown', e => { keys[e.code] = true; });
+        window.addEventListener('keyup', e => keys[e.code] = false);
+        
+        window.addEventListener('resize', () => {
+            if (gameActive) {
+                canvas.width = container.clientWidth;
+                canvas.height = container.clientHeight;
+            }
+        });
+    </script>
+</body>
+</html>
